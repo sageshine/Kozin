@@ -70,12 +70,23 @@ class DownloadService : Service() {
             if (YoutubeDL.getInstance().versionName(this).isNullOrEmpty()) {
                 updated = updateEngine(title)
             }
+            var note = ""
             try {
                 fetch(url, title, selector, thumb, work)
             } catch (e: Throwable) {
-                if (canceled || updated || !updateEngine(title)) throw e
-                work = File(root, "${System.currentTimeMillis()}").apply { mkdirs() }
-                fetch(url, title, selector, thumb, work)
+                if (canceled) throw e
+                try {
+                    // 엔진이 낡아서 실패했을 수 있으니 새로 받아 한 번 더 해 본다.
+                    if (updated || !updateEngine(title)) throw e
+                    work = File(root, "${System.currentTimeMillis()}").apply { mkdirs() }
+                    fetch(url, title, selector, thumb, work)
+                } catch (e2: Throwable) {
+                    // 앨범 그림 때문에 실패했을 수 있으니, 그림 없이 음원만이라도 받는다.
+                    if (canceled || !thumb) throw e2
+                    work = File(root, "${System.currentTimeMillis()}").apply { mkdirs() }
+                    fetch(url, title, selector, false, work)
+                    note = " (앨범 그림은 넣지 못했습니다)"
+                }
             }
 
             val raw = work.listFiles()
@@ -91,7 +102,7 @@ class DownloadService : Service() {
             DlBus.state.value = DlState.Running(title, 100, "저장 중…")
             val mime = mimeOf(file)
             val (uri, where) = save(file, mime)
-            DlBus.state.value = DlState.Done(file.name, uri, mime, where)
+            DlBus.state.value = DlState.Done(file.name, uri, mime, where + note)
             notifier().notify(NOTI_DONE, doneNotification(file.name, uri, mime))
         } catch (e: Throwable) {
             DlBus.state.value =

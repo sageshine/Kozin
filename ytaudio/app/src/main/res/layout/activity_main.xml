@@ -131,7 +131,8 @@
             android:id="@+id/embedThumb"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="썸네일을 앨범 그림으로 넣기 (실험)" />
+            android:checked="true"
+            android:text="썸네일을 앨범 그림으로 넣기" />
 
         <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent"

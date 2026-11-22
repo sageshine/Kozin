@@ -53,6 +53,14 @@ object DlBus {
 /** 저장 폴더 설정. 고르지 않으면 Music/YTAudio 에 저장한다. */
 object Prefs {
     private const val KEY_TREE = "tree"
+    private const val KEY_THUMB = "thumb"
+
+    /** 앨범 그림 넣기. 따로 끄지 않는 한 켜져 있다. */
+    fun thumb(context: Context): Boolean = prefs(context).getBoolean(KEY_THUMB, true)
+
+    fun setThumb(context: Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_THUMB, value).apply()
+    }
 
     private fun prefs(context: Context) =
         context.getSharedPreferences("settings", Context.MODE_PRIVATE)

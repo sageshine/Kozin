@@ -75,6 +75,8 @@ class MainActivity : AppCompatActivity() {
         sub = findViewById(R.id.sub)
         format = findViewById(R.id.format)
         embedThumb = findViewById(R.id.embedThumb)
+        embedThumb.isChecked = Prefs.thumb(this)
+        embedThumb.setOnCheckedChangeListener { _, checked -> Prefs.setThumb(this, checked) }
         download = findViewById(R.id.download)
         progress = findViewById(R.id.progress)
         status = findViewById(R.id.status)

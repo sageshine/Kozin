@@ -46,6 +46,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var engine: TextView
     private lateinit var update: Button
     private lateinit var saveDir: TextView
+    private lateinit var fileName: EditText
     private lateinit var resetDir: Button
 
     private val pickDir = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -82,6 +83,7 @@ class MainActivity : AppCompatActivity() {
         engine = findViewById(R.id.engine)
         update = findViewById(R.id.update)
         saveDir = findViewById(R.id.saveDir)
+        fileName = findViewById(R.id.fileName)
         resetDir = findViewById(R.id.resetDir)
 
         findViewById<Button>(R.id.pickDir).setOnClickListener { pickDir.launch(Prefs.tree(this)) }
@@ -151,6 +153,7 @@ class MainActivity : AppCompatActivity() {
         }
         if (busy) return
         setBusy(true, "정보를 가져오는 중… (처음 실행은 조금 걸립니다)")
+        fileName.setText("")
         lifecycleScope.launch {
             try {
                 val (info, bitmap) = withContext(Dispatchers.IO) {
@@ -161,6 +164,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 infoUrl = link
                 infoTitle = info.title
+                fileName.setText(info.title?.let(Names::clean).orEmpty())
                 title.text = info.title ?: "(제목 없음)"
                 sub.text = listOfNotNull(info.uploader, formatDuration(info.duration))
                     .joinToString(" · ")
@@ -193,7 +197,9 @@ class MainActivity : AppCompatActivity() {
             else -> DownloadService.SELECTOR_BEST
         }
         val name = infoTitle?.takeIf { infoUrl == link } ?: "음원"
-        DownloadService.start(this, link, name, selector, embedThumb.isChecked)
+        DownloadService.start(
+            this, link, name, selector, embedThumb.isChecked, fileName.text?.toString().orEmpty()
+        )
     }
 
     private fun showSaveDir() {

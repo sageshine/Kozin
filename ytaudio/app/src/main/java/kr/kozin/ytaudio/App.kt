@@ -75,3 +75,38 @@ object Prefs {
         "고른 폴더"
     }
 }
+
+/** 파일 이름 정리. 유튜브 제목에 붙는 군더더기를 지우고, 파일 이름에 못 쓰는 글자를 뺀다. */
+object Names {
+    // 괄호 안에 이런 말이 있으면 괄호째 지운다. (feat. …), (Live) 같은 것은 남긴다.
+    private val NOISE = Regex(
+        """official|video|audio|lyric|visuali[sz]er|teaser|trailer|\bm[/⧸]?v\b|\b(4k|8k|hd|hq|uhd|\d{3,4}p)\b|가사|공식|公式|뮤직\s*비디오|자막|고음질|음원""",
+        RegexOption.IGNORE_CASE
+    )
+    private val GROUP = Regex(
+        """[(\[（【「『〔<《][^()\[\]（）【】「」『』〔〕<>《》]*[)\]）】」』〕>》]"""
+    )
+    private val HASHTAG = Regex("""#\S+""")
+    // 괄호 없이 제목에 그냥 붙어 있는 꼬리표.
+    private val PHRASE = Regex(
+        """\b(official\s+(music\s+)?(video|audio|mv|m[/⧸]v|lyrics?\s+video|visuali[sz]er)|music\s+video|lyrics?\s+video|m[/⧸]v|mv|4k|8k|uhd|\d{3,4}p)\b""",
+        RegexOption.IGNORE_CASE
+    )
+    private val FORBIDDEN = Regex("""[\\/:*?"<>|：？＂＊｜＜＞⧸⧹]""")
+    private val SYMBOLS = Regex("""[\p{So}\p{Cc}\p{Cf}\uFE0F\x{1F3FB}-\x{1F3FF}]""")
+    private val SPACES = Regex("""\s+""")
+
+    /** 제목을 자동으로 다듬는다. */
+    fun clean(title: String): String {
+        var s = GROUP.replace(title) { if (NOISE.containsMatchIn(it.value)) " " else it.value }
+        s = HASHTAG.replace(s, " ")
+        s = PHRASE.replace(s, " ")
+        return sanitize(s).ifEmpty { sanitize(title).ifEmpty { "음원" } }
+    }
+
+    /** 사람이 적은 이름은 뜻을 건드리지 않고, 파일 이름에 못 쓰는 글자만 뺀다. */
+    fun sanitize(name: String): String {
+        val s = SPACES.replace(SYMBOLS.replace(FORBIDDEN.replace(name, " "), ""), " ")
+        return s.trim(' ', '-', '_', '.', '~', ',').take(80).trim()
+    }
+}

@@ -133,6 +133,21 @@
             android:layout_height="wrap_content"
             android:text="썸네일을 앨범 그림으로 넣기 (실험)" />
 
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:hint="파일 이름"
+            app:helperText="비워 두면 제목을 자동으로 정리해 씁니다. 확장자는 적지 않습니다.">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/fileName"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text"
+                android:maxLines="1" />
+        </com.google.android.material.textfield.TextInputLayout>
+
         <TextView
             android:id="@+id/saveDir"
             android:layout_width="match_parent"

@@ -47,19 +47,20 @@ class DownloadService : Service() {
                 val title = intent.getStringExtra(EXTRA_TITLE) ?: "음원"
                 val selector = intent.getStringExtra(EXTRA_SELECTOR) ?: SELECTOR_BEST
                 val thumb = intent.getBooleanExtra(EXTRA_THUMB, false)
+                val fileName = intent.getStringExtra(EXTRA_NAME).orEmpty()
                 canceled = false
                 ServiceCompat.startForeground(
                     this, NOTI_PROGRESS, progressNotification(title, 0, true),
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
                 )
                 DlBus.state.value = DlState.Running(title, 0, "준비 중…")
-                job = scope.launch { run(url, title, selector, thumb) }
+                job = scope.launch { run(url, title, selector, thumb, fileName) }
             }
         }
         return START_NOT_STICKY
     }
 
-    private fun run(url: String, title: String, selector: String, thumb: Boolean) {
+    private fun run(url: String, title: String, selector: String, thumb: Boolean, fileName: String) {
         val root = File(cacheDir, "dl").apply { deleteRecursively() }
         var work = File(root, "${System.currentTimeMillis()}").apply { mkdirs() }
         try {
@@ -77,10 +78,15 @@ class DownloadService : Service() {
                 fetch(url, title, selector, thumb, work)
             }
 
-            val file = work.listFiles()
+            val raw = work.listFiles()
                 ?.filter { it.isFile && it.extension.lowercase() in AUDIO_EXT }
                 ?.maxByOrNull { it.length() }
                 ?: error("받은 음원 파일을 찾지 못했습니다.")
+
+            // 직접 적은 이름이 있으면 그대로, 없으면 제목을 자동으로 다듬어 쓴다.
+            val base = Names.sanitize(fileName).ifEmpty { Names.clean(raw.nameWithoutExtension) }
+            val named = File(work, "$base.${raw.extension}")
+            val file = if (named == raw || raw.renameTo(named)) named else raw
 
             DlBus.state.value = DlState.Running(title, 100, "저장 중…")
             val mime = mimeOf(file)
@@ -259,6 +265,7 @@ class DownloadService : Service() {
         const val EXTRA_TITLE = "title"
         const val EXTRA_SELECTOR = "selector"
         const val EXTRA_THUMB = "thumb"
+        const val EXTRA_NAME = "name"
 
         const val SELECTOR_BEST = "bestaudio/best"
         const val SELECTOR_M4A = "bestaudio[ext=m4a]/bestaudio/best"
@@ -269,13 +276,17 @@ class DownloadService : Service() {
         private const val NOTI_DONE = 2
         private val AUDIO_EXT = setOf("m4a", "opus", "ogg", "webm", "mp3", "aac", "flac", "wav", "mka")
 
-        fun start(context: Context, url: String, title: String, selector: String, thumb: Boolean) {
+        fun start(
+            context: Context, url: String, title: String, selector: String, thumb: Boolean,
+            fileName: String
+        ) {
             val intent = Intent(context, DownloadService::class.java)
                 .setAction(ACTION_START)
                 .putExtra(EXTRA_URL, url)
                 .putExtra(EXTRA_TITLE, title)
                 .putExtra(EXTRA_SELECTOR, selector)
                 .putExtra(EXTRA_THUMB, thumb)
+                .putExtra(EXTRA_NAME, fileName)
             context.startForegroundService(intent)
         }
 

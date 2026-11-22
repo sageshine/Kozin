@@ -133,6 +133,35 @@
             android:layout_height="wrap_content"
             android:text="썸네일을 앨범 그림으로 넣기 (실험)" />
 
+        <TextView
+            android:id="@+id/saveDir"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/pickDir"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="폴더 선택" />
+
+            <Button
+                android:id="@+id/resetDir"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="기본 위치로"
+                android:visibility="gone" />
+        </LinearLayout>
+
         <Button
             android:id="@+id/download"
             android:layout_width="match_parent"
@@ -195,6 +224,6 @@
             style="@style/Widget.Material3.Button.TextButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="추출 엔진 업데이트 (받기가 실패할 때)" />
+            android:text="추출 엔진 지금 업데이트" />
     </LinearLayout>
 </ScrollView>

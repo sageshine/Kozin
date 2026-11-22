@@ -14,6 +14,7 @@ import android.widget.EditText
 import android.widget.ImageView
 import android.widget.RadioGroup
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -44,6 +45,17 @@ class MainActivity : AppCompatActivity() {
     private lateinit var open: Button
     private lateinit var engine: TextView
     private lateinit var update: Button
+    private lateinit var saveDir: TextView
+    private lateinit var resetDir: Button
+
+    private val pickDir = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            contentResolver.takePersistableUriPermission(uri, flags)
+            Prefs.setTree(this, uri)
+            showSaveDir()
+        }
+    }
 
     /** 정보 조회로 확인한 주소와 제목. 주소가 바뀌면 제목을 다시 조회한다. */
     private var infoUrl: String? = null
@@ -69,6 +81,15 @@ class MainActivity : AppCompatActivity() {
         open = findViewById(R.id.open)
         engine = findViewById(R.id.engine)
         update = findViewById(R.id.update)
+        saveDir = findViewById(R.id.saveDir)
+        resetDir = findViewById(R.id.resetDir)
+
+        findViewById<Button>(R.id.pickDir).setOnClickListener { pickDir.launch(Prefs.tree(this)) }
+        resetDir.setOnClickListener {
+            Prefs.setTree(this, null)
+            showSaveDir()
+        }
+        showSaveDir()
 
         findViewById<Button>(R.id.paste).setOnClickListener { paste() }
         fetch.setOnClickListener { fetchInfo() }
@@ -175,6 +196,12 @@ class MainActivity : AppCompatActivity() {
         DownloadService.start(this, link, name, selector, embedThumb.isChecked)
     }
 
+    private fun showSaveDir() {
+        val tree = Prefs.tree(this)
+        saveDir.text = "저장 위치: " + (tree?.let(Prefs::label) ?: "Music/YTAudio (기본)")
+        resetDir.visibility = if (tree != null) View.VISIBLE else View.GONE
+    }
+
     private fun updateEngine() {
         if (busy) return
         setBusy(true, "추출 엔진을 업데이트하는 중…")
@@ -182,7 +209,7 @@ class MainActivity : AppCompatActivity() {
             val message = try {
                 val result = withContext(Dispatchers.IO) {
                     Engine.ensureInit(this@MainActivity)
-                    YoutubeDL.getInstance().updateYoutubeDL(this@MainActivity)
+                    YoutubeDL.getInstance().updateYoutubeDL(this@MainActivity, Engine.CHANNEL)
                 }
                 if (result == YoutubeDL.UpdateStatus.ALREADY_UP_TO_DATE) "이미 최신 버전입니다."
                 else "업데이트했습니다."
@@ -205,7 +232,8 @@ class MainActivity : AppCompatActivity() {
                     null
                 }
             }
-            engine.text = "추출 엔진(yt-dlp) 버전: ${version ?: "확인 못 함"}"
+            engine.text = "추출 엔진(yt-dlp) 버전: " +
+                (version?.takeIf { it.isNotEmpty() } ?: "내장 버전 (첫 다운로드 때 자동으로 최신으로 바뀝니다)")
         }
     }
 
@@ -230,7 +258,8 @@ class MainActivity : AppCompatActivity() {
                 status.text = state.line
             }
             is DlState.Done -> {
-                status.text = "저장했습니다: Music/YTAudio/${state.name}"
+                status.text = "저장했습니다: ${state.where}"
+                showEngineVersion()
                 open.setOnClickListener {
                     val view = Intent(Intent.ACTION_VIEW)
                         .setDataAndType(state.uri, state.mime)
@@ -242,8 +271,10 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }
-            is DlState.Failed -> status.text =
-                "받지 못했습니다. 아래 '추출 엔진 업데이트'를 누른 뒤 다시 해 보세요.\n" + state.message
+            is DlState.Failed -> {
+                status.text = "받지 못했습니다.\n" + state.message
+                showEngineVersion()
+            }
         }
     }
 

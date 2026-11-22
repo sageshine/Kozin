@@ -11,6 +11,7 @@ import android.content.pm.ServiceInfo
 import android.net.Uri
 import android.os.Environment
 import android.os.IBinder
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.webkit.MimeTypeMap
 import androidx.core.app.NotificationCompat
@@ -59,30 +60,21 @@ class DownloadService : Service() {
     }
 
     private fun run(url: String, title: String, selector: String, thumb: Boolean) {
-        val work = File(cacheDir, "dl/${System.currentTimeMillis()}").apply { mkdirs() }
+        val root = File(cacheDir, "dl").apply { deleteRecursively() }
+        var work = File(root, "${System.currentTimeMillis()}").apply { mkdirs() }
         try {
             Engine.ensureInit(this)
-            val request = YoutubeDLRequest(url).apply {
-                addOption("--no-playlist")
-                addOption("-f", selector)
-                // -x 만 주고 형식을 지정하지 않으면 다시 인코딩하지 않고 음원만 꺼낸다.
-                addOption("-x")
-                addOption("--embed-metadata")
-                if (thumb) {
-                    addOption("--embed-thumbnail")
-                    addOption("--convert-thumbnails", "jpg")
-                }
-                addOption("--no-mtime")
-                addOption("-o", work.absolutePath + "/%(title).60s.%(ext)s")
+            // 내장 엔진은 앱을 만든 날짜에 멈춰 있어 유튜브가 거절한다. 처음 한 번은 먼저 최신으로 바꾼다.
+            var updated = false
+            if (YoutubeDL.getInstance().versionName(this).isNullOrEmpty()) {
+                updated = updateEngine(title)
             }
-            YoutubeDL.getInstance().execute(request, PROCESS_ID) { progress, _, line ->
-                val percent = progress.toInt().coerceIn(0, 100)
-                DlBus.state.value = DlState.Running(title, percent, line.trim())
-                val now = System.currentTimeMillis()
-                if (now - lastNotify > 1000) {
-                    lastNotify = now
-                    notifier().notify(NOTI_PROGRESS, progressNotification(title, percent, false))
-                }
+            try {
+                fetch(url, title, selector, thumb, work)
+            } catch (e: Throwable) {
+                if (canceled || updated || !updateEngine(title)) throw e
+                work = File(root, "${System.currentTimeMillis()}").apply { mkdirs() }
+                fetch(url, title, selector, thumb, work)
             }
 
             val file = work.listFiles()
@@ -92,18 +84,93 @@ class DownloadService : Service() {
 
             DlBus.state.value = DlState.Running(title, 100, "저장 중…")
             val mime = mimeOf(file)
-            val uri = saveToMusic(file, mime)
-            DlBus.state.value = DlState.Done(file.name, uri, mime)
+            val (uri, where) = save(file, mime)
+            DlBus.state.value = DlState.Done(file.name, uri, mime, where)
             notifier().notify(NOTI_DONE, doneNotification(file.name, uri, mime))
         } catch (e: Throwable) {
             DlBus.state.value =
-                if (canceled) DlState.Idle
-                else DlState.Failed(e.message?.trim()?.takeLast(600) ?: e.toString())
+                if (canceled) DlState.Idle else DlState.Failed(readableError(e))
         } finally {
-            work.deleteRecursively()
+            root.deleteRecursively()
             ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
+    }
+
+    private fun fetch(url: String, title: String, selector: String, thumb: Boolean, work: File) {
+        val request = YoutubeDLRequest(url).apply {
+            addOption("--no-playlist")
+            addOption("-f", selector)
+            // -x 만 주고 형식을 지정하지 않으면 다시 인코딩하지 않고 음원만 꺼낸다.
+            addOption("-x")
+            addOption("--embed-metadata")
+            if (thumb) {
+                addOption("--embed-thumbnail")
+                addOption("--convert-thumbnails", "jpg")
+            }
+            // 유튜브 서명 풀이에 필요한 스크립트가 엔진에 없으면 받아 오게 한다.
+            addOption("--remote-components", "ejs:github")
+            addOption("--no-mtime")
+            addOption("-o", work.absolutePath + "/%(title).60s.%(ext)s")
+        }
+        YoutubeDL.getInstance().execute(request, PROCESS_ID) { progress, _, line ->
+            val percent = progress.toInt().coerceIn(0, 100)
+            DlBus.state.value = DlState.Running(title, percent, line.trim())
+            val now = System.currentTimeMillis()
+            if (now - lastNotify > 1000) {
+                lastNotify = now
+                notifier().notify(NOTI_PROGRESS, progressNotification(title, percent, false))
+            }
+        }
+    }
+
+    /** 엔진을 새로 받았으면 true. 이미 최신이거나 받지 못했으면 false. */
+    private fun updateEngine(title: String): Boolean {
+        DlBus.state.value = DlState.Running(title, 0, "추출 엔진을 최신으로 바꾸는 중…")
+        return try {
+            YoutubeDL.getInstance().updateYoutubeDL(this, Engine.CHANNEL) ==
+                YoutubeDL.UpdateStatus.DONE
+        } catch (e: Throwable) {
+            false
+        }
+    }
+
+    /** 경고 줄은 빼고 실제 오류 줄만 보여 준다. */
+    private fun readableError(e: Throwable): String {
+        val text = e.message?.trim() ?: return e.toString()
+        val errors = text.lines().filter { it.trimStart().startsWith("ERROR") }
+        return (if (errors.isNotEmpty()) errors.joinToString("\n") else text).takeLast(600)
+    }
+
+    /** 고른 폴더가 있으면 거기에, 없거나 쓸 수 없으면 기본 위치에 저장한다. */
+    private fun save(file: File, mime: String): Pair<Uri, String> {
+        val tree = Prefs.tree(this)
+        if (tree != null) {
+            try {
+                return saveToTree(file, mime, tree) to "${Prefs.label(tree)}/${file.name}"
+            } catch (e: Throwable) {
+                // 폴더가 지워졌거나 권한이 사라진 경우 기본 위치로 넘어간다.
+            }
+        }
+        val note = if (tree != null) " (고른 폴더에 쓸 수 없어 기본 위치에 저장)" else ""
+        return saveToMusic(file, mime) to "Music/YTAudio/${file.name}$note"
+    }
+
+    private fun saveToTree(file: File, mime: String, tree: Uri): Uri {
+        val parent = DocumentsContract.buildDocumentUriUsingTree(
+            tree, DocumentsContract.getTreeDocumentId(tree)
+        )
+        val doc = DocumentsContract.createDocument(contentResolver, parent, mime, file.name)
+            ?: error("고른 폴더에 파일을 만들지 못했습니다.")
+        try {
+            contentResolver.openOutputStream(doc)!!.use { out ->
+                file.inputStream().use { it.copyTo(out) }
+            }
+        } catch (e: Throwable) {
+            try { DocumentsContract.deleteDocument(contentResolver, doc) } catch (ignored: Throwable) {}
+            throw e
+        }
+        return doc
     }
 
     /** 휴대폰의 Music/YTAudio 폴더에 넣는다. 저장 권한 없이 쓸 수 있는 방식이다. */
